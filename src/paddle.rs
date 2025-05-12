@@ -1,12 +1,22 @@
 use crate::direction::Direction;
+use crate::marker::Integer;
 
-struct Boundary {
-    left: i16,
-    right: i16
+pub struct Boundary {
+    left: i32,
+    right: i32
 }
 
-struct Paddle {
-    body: Vec<i16>,
+impl Boundary {
+    pub fn new<T: Into<i32>>(left: T, right: T) -> Self {
+        Self {
+            left: left.into(),
+            right: right.into(),
+        }
+    }
+}
+
+pub struct Paddle {
+    pub body: Vec<i32>,
     body_length: usize,
     boundary: Boundary,
 }
@@ -14,7 +24,7 @@ struct Paddle {
 impl Paddle {
     pub fn new(body_length: usize, boundary: Boundary) -> Self {
         let mid = (boundary.left + boundary.right) / 2;
-        let half_body = (body_length / 2) as i16;
+        let half_body = (body_length / 2) as i32;
         let body = (-half_body..=half_body).map(|x| x + mid).collect();
 
         Self {
@@ -24,15 +34,15 @@ impl Paddle {
         }
     }
 
-    fn move_within_boundaries(&mut self, times: i16) {
+    fn move_within_boundaries(&mut self, times: i32) {
         let mut transform: bool = false;
         
         if times > 0 {
-            if self.body[self.body_length] + times < self.boundary.right {
+            if self.body[self.body_length-1] + times < self.boundary.right {
                 transform = true;
             }
         } else if times < 0 {
-            if self.body[self.body_length] + times > self.boundary.left {
+            if self.body[0] + times > self.boundary.left {
                 transform = true;
             }
         }
@@ -42,12 +52,10 @@ impl Paddle {
         }
     }
 
-    fn shift(&mut self, direction: Option<Direction>) {
-        if let Some(direction) = direction {
-            match direction {
-                Direction::Left => self.move_within_boundaries(-1),
-                Direction::Right => self.move_within_boundaries(1),
-            }
+    pub fn shift(&mut self, direction: Direction) {
+        match direction {
+            Direction::Left => self.move_within_boundaries(-1),
+            Direction::Right => self.move_within_boundaries(1),
         }
     }
 }
