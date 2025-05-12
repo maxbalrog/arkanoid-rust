@@ -38,7 +38,7 @@ impl Paddle {
         let mut transform: bool = false;
         
         if times > 0 {
-            if self.body[self.body_length-1] + times < self.boundary.right {
+            if self.body[self.body_length-1] + times < self.boundary.right + 1 {
                 transform = true;
             }
         } else if times < 0 {

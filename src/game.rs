@@ -8,6 +8,7 @@ use crossterm::ExecutableCommand;
 use crate::{command::Command, direction::Direction, paddle::{Boundary, Paddle}};
 
 const PADDLE_LENGTH: usize = 5;
+const HAT_SIZE: u16 = 2;
 
 pub struct Game {
     stdout: Stdout,
@@ -15,6 +16,8 @@ pub struct Game {
     width: u16,
     height: u16,
     paddle: Paddle,
+    score: u32,
+    lives: u8,
 }
 
 impl Game {
@@ -26,7 +29,9 @@ impl Game {
             original_terminal_size,
             width,
             height,
-            paddle: Paddle::new(PADDLE_LENGTH, boundary) 
+            paddle: Paddle::new(PADDLE_LENGTH, boundary),
+            score: 0,
+            lives: 3,
         }
     }
 
@@ -90,7 +95,7 @@ impl Game {
     fn prepare_ui(&mut self) {
         enable_raw_mode().unwrap();
         self.stdout
-            .execute(SetSize(self.width + 3, self.height + 3)).unwrap()
+            .execute(SetSize(self.width + 3, self.height + 3 + HAT_SIZE)).unwrap()
             .execute(Clear(ClearType::All)).unwrap()
             .execute(Hide).unwrap();
     }
@@ -109,12 +114,13 @@ impl Game {
         self.draw_background();
         self.draw_borders();
         self.draw_paddle();
+        self.draw_text_ui();
     }
 
     fn draw_background(&mut self) {
         self.stdout.execute(ResetColor).unwrap();
 
-        for y in 1..self.height + 1 {
+        for y in 1 + HAT_SIZE..self.height + 1 + HAT_SIZE {
             for x in 1..self.width + 1 {
                 self.stdout
                     .execute(MoveTo(x, y)).unwrap()
@@ -126,7 +132,7 @@ impl Game {
     fn draw_borders(&mut self) {
         self.stdout.execute(SetForegroundColor(Color::DarkGrey)).unwrap();
 
-        for y in 0..self.height + 2 {
+        for y in HAT_SIZE..self.height + 2 + HAT_SIZE {
             self.stdout
                 .execute(MoveTo(0, y)).unwrap()
                 .execute(Print("#")).unwrap()
@@ -136,9 +142,9 @@ impl Game {
 
         for x in 0..self.width + 2 {
             self.stdout
-                .execute(MoveTo(x, 0)).unwrap()
+                .execute(MoveTo(x, HAT_SIZE)).unwrap()
                 .execute(Print("#")).unwrap()
-                .execute(MoveTo(x, self.height + 1)).unwrap()
+                .execute(MoveTo(x, self.height + 1 + HAT_SIZE)).unwrap()
                 .execute(Print("#")).unwrap();
         }
     }
@@ -149,9 +155,24 @@ impl Game {
 
         for x in &self.paddle.body {
             self.stdout
-                .execute(MoveTo(*x as u16, self.height)).unwrap()
+                .execute(MoveTo(*x as u16, self.height + HAT_SIZE)).unwrap()
                 .execute(Print("=")).unwrap();
         }
+    }
+
+    fn draw_text_ui(&mut self) {
+        let fg = SetForegroundColor(Color::White);
+        self.stdout.execute(fg).unwrap();
+
+        // draw scores
+        self.stdout
+            .execute(MoveTo(0, 1)).unwrap()
+            .execute(Print(format!("SCORE: {:04}", self.score))).unwrap();
+
+        // draw lives
+        self.stdout
+            .execute(MoveTo(self.width - (self.lives as u16) - 1, 1)).unwrap()
+            .execute(Print("❤ ".repeat(self.lives as usize))).unwrap();
     }
 
 }
