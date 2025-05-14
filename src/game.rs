@@ -1,12 +1,14 @@
 use std::{io::Stdout, time::Instant};
 use std::thread;
 use std::time::Duration;
+use std::cmp::max;
 
 use crossterm::{cursor::{Hide, MoveTo, Show}, event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers}, style::{Color, Print, ResetColor, SetForegroundColor}, terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}};
 use crossterm::ExecutableCommand;
 
 use crate::{command::Command, direction::Direction, paddle::Paddle};
 use crate::boundary::Boundary;
+use crate::projectile::Projectile;
 
 const PADDLE_LENGTH: usize = 5;
 const HAT_SIZE: u16 = 2;
@@ -16,7 +18,9 @@ pub struct Game {
     original_terminal_size: (u16, u16),
     width: u16,
     height: u16,
+    boundary: Boundary,
     paddle: Paddle,
+    projectile: Projectile,
     score: u32,
     lives: u8,
 }
@@ -24,13 +28,18 @@ pub struct Game {
 impl Game {
     pub fn new(stdout: Stdout, width: u16, height: u16) -> Self {
         let original_terminal_size: (u16, u16) = size().unwrap();
-        let boundary = Boundary::new(0, width, HAT_SIZE, HAT_SIZE + height);
+        let boundary = Boundary::new(0, width, HAT_SIZE, HAT_SIZE + height + 1);
+        let paddle = Paddle::new(PADDLE_LENGTH, boundary.clone());
+        let projectile = Projectile::new(5, 5, 1, 1, boundary.clone());
+
         Self { 
             stdout,
             original_terminal_size,
             width,
             height,
-            paddle: Paddle::new(PADDLE_LENGTH, boundary),
+            boundary,
+            paddle,
+            projectile,
             score: 0,
             lives: 3,
         }
@@ -40,29 +49,71 @@ impl Game {
         self.prepare_ui();
         self.render();
         
-        let mut done: bool = false;
-        while !done {
-            let interval = Duration::from_secs(1);
-            let now = Instant::now();
+        while self.lives > 0 {
+            self.projectile = Projectile::new(5, 5, 1, 1, self.boundary.clone());
+            let mut done: bool = false;
+            while !done {
+                let interval = Duration::from_secs(1);
+                let now = Instant::now();
 
-            while now.elapsed() < interval {
-                if let Some(command) = self.get_command(interval - now.elapsed()) {
-                    match command {
-                        Command::Quit => {
-                            done = true;
-                            break;
-                        }
-                        Command::Move(direction) => {
-                            self.paddle.shift(direction);
+                while now.elapsed() < interval {
+                    if let Some(command) = self.get_command(interval - now.elapsed()) {
+                        match command {
+                            Command::Quit => {
+                                done = true;
+                                break;
+                            }
+                            Command::Move(direction) => {
+                                self.paddle.shift(direction);
+                            }
                         }
                     }
                 }
-            }
+                self.render();
 
-            self.render();
+                let projectile_lost = self.fly_projectile();
+
+                let sleep_time = interval.abs_diff(now.elapsed());
+                thread::sleep(sleep_time);
+                self.render();
+
+                if projectile_lost {
+                    self.lives -= 1;
+                    done = true;
+                }
+            }
         }
 
         self.restore_ui();
+        println!("Game over! Your score is {}", self.score);
+    }
+
+    fn fly_projectile(&mut self) -> bool {
+        let projectile_lost = self.check_paddle_collision();
+        self.projectile.fly_projectile();
+        projectile_lost
+    }
+
+    fn check_paddle_collision(&mut self) -> bool {
+        let (proj_x, proj_y) = self.projectile.predict_future_position();
+        let mut projectile_lost = false;
+
+        if proj_y == self.boundary.bottom() - 1 {
+            let mut collided_with_paddle = false;
+            for paddle_x in &self.paddle.body {
+                if proj_x == *paddle_x { 
+                    collided_with_paddle = true;
+                    break;
+                }
+            }
+            if collided_with_paddle {
+                self.projectile.velocity.y *= -1;
+            } else {
+                projectile_lost = true;
+            }
+        }
+
+        projectile_lost
     }
 
     fn get_command(&self, wait_for: Duration) -> Option<Command> {
@@ -116,6 +167,7 @@ impl Game {
         self.draw_borders();
         self.draw_paddle();
         self.draw_text_ui();
+        self.draw_projectile();
     }
 
     fn draw_background(&mut self) {
@@ -174,6 +226,17 @@ impl Game {
         self.stdout
             .execute(MoveTo(self.width - (self.lives as u16) - 1, 1)).unwrap()
             .execute(Print("❤ ".repeat(self.lives as usize))).unwrap();
+    }
+
+    fn draw_projectile(&mut self) {
+        let fg = SetForegroundColor(Color::White);
+        self.stdout.execute(fg).unwrap();
+
+        let x = self.projectile.position.x as u16;
+        let y = self.projectile.position.y as u16;
+        self.stdout
+            .execute(MoveTo(x, y)).unwrap()
+            .execute(Print("⬤")).unwrap();
     }
 
 }

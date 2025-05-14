@@ -1,6 +1,7 @@
 use crate::boundary::Boundary;
 use crate::direction::Direction;
 
+#[derive(Debug, Clone)]
 pub struct Paddle {
     pub body: Vec<u32>,
     body_length: usize,

@@ -1,3 +1,4 @@
+#[derive(Debug, Clone)]
 pub struct Boundary {
     left: u32,
     right: u32,
