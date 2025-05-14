@@ -1,31 +1,17 @@
+use crate::boundary::Boundary;
 use crate::direction::Direction;
-use crate::marker::Integer;
-
-pub struct Boundary {
-    left: i32,
-    right: i32
-}
-
-impl Boundary {
-    pub fn new<T: Into<i32>>(left: T, right: T) -> Self {
-        Self {
-            left: left.into(),
-            right: right.into(),
-        }
-    }
-}
 
 pub struct Paddle {
-    pub body: Vec<i32>,
+    pub body: Vec<u32>,
     body_length: usize,
     boundary: Boundary,
 }
 
 impl Paddle {
     pub fn new(body_length: usize, boundary: Boundary) -> Self {
-        let mid = (boundary.left + boundary.right) / 2;
+        let mid = (boundary.left() + boundary.right()) / 2;
         let half_body = (body_length / 2) as i32;
-        let body = (-half_body..=half_body).map(|x| x + mid).collect();
+        let body = (-half_body..=half_body).map(|x| mid.wrapping_add_signed(x)).collect();
 
         Self {
             body,
@@ -38,17 +24,19 @@ impl Paddle {
         let mut transform: bool = false;
         
         if times > 0 {
-            if self.body[self.body_length-1] + times < self.boundary.right + 1 {
+            let new_right = self.body[self.body_length-1].wrapping_add_signed(times);
+            if new_right < self.boundary.right() + 1 {
                 transform = true;
             }
         } else if times < 0 {
-            if self.body[0] + times > self.boundary.left {
+            let new_left = self.body[0].wrapping_add_signed(times);
+            if new_left > self.boundary.left() {
                 transform = true;
             }
         }
 
         if transform {
-            self.body = self.body.iter().map(|x| x + times).collect()
+            self.body = self.body.iter().map(|x| x.wrapping_add_signed(times)).collect()
         }
     }
 

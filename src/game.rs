@@ -5,7 +5,8 @@ use std::time::Duration;
 use crossterm::{cursor::{Hide, MoveTo, Show}, event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers}, style::{Color, Print, ResetColor, SetForegroundColor}, terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}};
 use crossterm::ExecutableCommand;
 
-use crate::{command::Command, direction::Direction, paddle::{Boundary, Paddle}};
+use crate::{command::Command, direction::Direction, paddle::Paddle};
+use crate::boundary::Boundary;
 
 const PADDLE_LENGTH: usize = 5;
 const HAT_SIZE: u16 = 2;
@@ -23,7 +24,7 @@ pub struct Game {
 impl Game {
     pub fn new(stdout: Stdout, width: u16, height: u16) -> Self {
         let original_terminal_size: (u16, u16) = size().unwrap();
-        let boundary = Boundary::new(0, width);
+        let boundary = Boundary::new(0, width, HAT_SIZE, HAT_SIZE + height);
         Self { 
             stdout,
             original_terminal_size,
