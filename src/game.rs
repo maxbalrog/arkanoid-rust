@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use crossterm::{cursor::{Hide, MoveTo, Show}, event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers}, style::{Color, Print, ResetColor, SetForegroundColor}, terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}};
 use crossterm::ExecutableCommand;
+use rand::{self, Rng};
 
 use crate::{command::Command, direction::Direction, paddle::Paddle};
 use crate::boundary::Boundary;
@@ -91,9 +92,14 @@ impl Game {
     }
 
     fn spawn_projectile(width: u16, height: u16, boundary: Boundary) -> Projectile {
-        let proj_x = (width/2) as u32;
+        let mut rng = rand::rng();
+        let proj_x = rng.random_range(1..width-1) as u32;
         let proj_y = (height/2) as u32;
-        Projectile::new(proj_x, proj_y, 1, 1, boundary)
+
+        let move_right = rng.random_bool(0.5);
+        let vx = if move_right {1} else {-1};
+
+        Projectile::new(proj_x, proj_y, vx, 1, boundary)
     }
 
     fn get_command(&self, wait_for: Duration) -> Option<Command> {
