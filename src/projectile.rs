@@ -1,5 +1,6 @@
-use crate::{boundary::Boundary, paddle::Paddle};
+use crate::{boundary::Boundary, obstacle::Obstacle, paddle::Paddle};
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct Point {
     pub x: u32,
     pub y: u32,
@@ -37,10 +38,12 @@ impl Projectile {
         }
     }
 
-    pub fn fly_projectile(&mut self, paddle: &Paddle) -> bool {
+    pub fn fly_projectile(&mut self, paddle: &Paddle, obstacle: &mut Obstacle) -> (bool, bool) {
         let projectile_lost = self.check_paddle_collision(paddle);
+        let block_destroyed = self.check_obstacle_collision(obstacle);
         self.assign_new_position();
-        projectile_lost
+
+        (projectile_lost, block_destroyed)
     }
 
     fn predict_future_position(&mut self) -> (u32, u32) {
@@ -77,6 +80,22 @@ impl Projectile {
         }
 
         projectile_lost
+    }
+
+    fn check_obstacle_collision(&mut self, obstacle: &mut Obstacle) -> bool {
+        let (proj_x, proj_y) = self.predict_future_position();
+        let mut block_destroyed = false;
+
+        let proj = Point::new(proj_x, proj_y);
+        let idx = obstacle.body.iter().position(|n| n == &proj);
+
+        if let Some(idx) = idx {
+            obstacle.body.remove(idx);
+            block_destroyed = true;
+            self.velocity.y *= -1;
+        }
+
+        block_destroyed
     }
 
     fn check_wall_collision(&mut self) {

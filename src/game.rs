@@ -2,13 +2,19 @@ use std::{io::Stdout, time::Instant};
 use std::thread;
 use std::time::Duration;
 
-use crossterm::{cursor::{Hide, MoveTo, Show}, event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers}, style::{Color, Print, ResetColor, SetForegroundColor}, terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}};
-use crossterm::ExecutableCommand;
+use crossterm::{
+    ExecutableCommand,
+    cursor::{Hide, MoveTo, Show},
+    event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
+    style::{Color, Print, ResetColor, SetForegroundColor},
+    terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}
+};
 use rand::{self, Rng};
 
 use crate::{command::Command, direction::Direction, paddle::Paddle};
 use crate::boundary::Boundary;
-use crate::projectile::Projectile;
+use crate::obstacle::{self, Obstacle};
+use crate::projectile::{Point, Projectile};
 
 const PADDLE_LENGTH: usize = 5;
 const HAT_SIZE: u16 = 2;
@@ -21,6 +27,7 @@ pub struct Game {
     boundary: Boundary,
     paddle: Paddle,
     projectile: Projectile,
+    obstacle: Obstacle,
     score: u32,
     lives: u8,
 }
@@ -34,6 +41,8 @@ impl Game {
         // spawn projectile
         let projectile = Game::spawn_projectile(width, height, boundary.clone());
 
+        let obstacle = Obstacle::new(width, height, 1);
+
         Self { 
             stdout,
             original_terminal_size,
@@ -42,6 +51,7 @@ impl Game {
             boundary,
             paddle,
             projectile,
+            obstacle,
             score: 0,
             lives: 3,
         }
@@ -53,7 +63,7 @@ impl Game {
         
         let mut done: bool = false;
         while !done {
-            let interval = Duration::from_millis(500);
+            let interval = Duration::from_millis(350);
             let now = Instant::now();
 
             while now.elapsed() < interval {
@@ -71,7 +81,8 @@ impl Game {
             }
             self.render();
 
-            let projectile_lost = self.projectile.fly_projectile(&self.paddle);
+            let (projectile_lost, block_destroyed) = self.projectile.fly_projectile(&self.paddle, &mut self.obstacle);
+            if block_destroyed {self.score += 10};
 
             let sleep_time = interval.abs_diff(now.elapsed());
             thread::sleep(sleep_time);
@@ -154,6 +165,7 @@ impl Game {
         self.draw_paddle();
         self.draw_text_ui();
         self.draw_projectile();
+        self.draw_obstacle();
     }
 
     fn draw_background(&mut self) {
@@ -231,6 +243,17 @@ impl Game {
         self.stdout
             .execute(MoveTo(x, y)).unwrap()
             .execute(Print("●")).unwrap();
+    }
+
+    fn draw_obstacle(&mut self) {
+        let fg = SetForegroundColor(Color::Green);
+        self.stdout.execute(fg).unwrap();
+
+        for Point{ x, y } in &self.obstacle.body {
+            self.stdout
+                .execute(MoveTo(*x as u16, *y as u16)).unwrap()
+                .execute(Print("■")).unwrap();
+        }
     }
 
 }
