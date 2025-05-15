@@ -1,7 +1,6 @@
 use std::{io::Stdout, time::Instant};
 use std::thread;
 use std::time::Duration;
-use std::cmp::max;
 
 use crossterm::{cursor::{Hide, MoveTo, Show}, event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers}, style::{Color, Print, ResetColor, SetForegroundColor}, terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}};
 use crossterm::ExecutableCommand;
@@ -30,7 +29,9 @@ impl Game {
         let original_terminal_size: (u16, u16) = size().unwrap();
         let boundary = Boundary::new(0, width, HAT_SIZE, HAT_SIZE + height + 1);
         let paddle = Paddle::new(PADDLE_LENGTH, boundary.clone());
-        let projectile = Projectile::new(5, 5, 1, 1, boundary.clone());
+
+        // spawn projectile
+        let projectile = Game::spawn_projectile(width, height, boundary.clone());
 
         Self { 
             stdout,
@@ -49,36 +50,37 @@ impl Game {
         self.prepare_ui();
         self.render();
         
-        while self.lives > 0 {
-            self.projectile = Projectile::new(5, 5, 1, 1, self.boundary.clone());
-            let mut done: bool = false;
-            while !done {
-                let interval = Duration::from_secs(1);
-                let now = Instant::now();
+        let mut done: bool = false;
+        while !done {
+            let interval = Duration::from_millis(500);
+            let now = Instant::now();
 
-                while now.elapsed() < interval {
-                    if let Some(command) = self.get_command(interval - now.elapsed()) {
-                        match command {
-                            Command::Quit => {
-                                done = true;
-                                break;
-                            }
-                            Command::Move(direction) => {
-                                self.paddle.shift(direction);
-                            }
+            while now.elapsed() < interval {
+                if let Some(command) = self.get_command(interval - now.elapsed()) {
+                    match command {
+                        Command::Quit => {
+                            done = true;
+                            break;
+                        }
+                        Command::Move(direction) => {
+                            self.paddle.shift(direction);
                         }
                     }
                 }
-                self.render();
+            }
+            self.render();
 
-                let projectile_lost = self.fly_projectile();
+            let projectile_lost = self.projectile.fly_projectile(&self.paddle);
 
-                let sleep_time = interval.abs_diff(now.elapsed());
-                thread::sleep(sleep_time);
-                self.render();
+            let sleep_time = interval.abs_diff(now.elapsed());
+            thread::sleep(sleep_time);
+            self.render();
 
-                if projectile_lost {
-                    self.lives -= 1;
+            if projectile_lost {
+                self.lives -= 1;
+                if self.lives > 0 {
+                    self.projectile = Game::spawn_projectile(self.width, self.height, self.boundary.clone());
+                } else {
                     done = true;
                 }
             }
@@ -88,32 +90,10 @@ impl Game {
         println!("Game over! Your score is {}", self.score);
     }
 
-    fn fly_projectile(&mut self) -> bool {
-        let projectile_lost = self.check_paddle_collision();
-        self.projectile.fly_projectile();
-        projectile_lost
-    }
-
-    fn check_paddle_collision(&mut self) -> bool {
-        let (proj_x, proj_y) = self.projectile.predict_future_position();
-        let mut projectile_lost = false;
-
-        if proj_y == self.boundary.bottom() - 1 {
-            let mut collided_with_paddle = false;
-            for paddle_x in &self.paddle.body {
-                if proj_x == *paddle_x { 
-                    collided_with_paddle = true;
-                    break;
-                }
-            }
-            if collided_with_paddle {
-                self.projectile.velocity.y *= -1;
-            } else {
-                projectile_lost = true;
-            }
-        }
-
-        projectile_lost
+    fn spawn_projectile(width: u16, height: u16, boundary: Boundary) -> Projectile {
+        let proj_x = (width/2) as u32;
+        let proj_y = (height/2) as u32;
+        Projectile::new(proj_x, proj_y, 1, 1, boundary)
     }
 
     fn get_command(&self, wait_for: Duration) -> Option<Command> {
@@ -180,6 +160,13 @@ impl Game {
                     .execute(Print(" ")).unwrap();
             }
         }
+
+        // Also clear lives bar
+        for x in self.width/2..self.width+1 {
+            self.stdout
+                .execute(MoveTo(x, 1)).unwrap()
+                .execute(Print(" ")).unwrap();
+        }
     }
 
     fn draw_borders(&mut self) {
@@ -223,9 +210,10 @@ impl Game {
             .execute(Print(format!("SCORE: {:04}", self.score))).unwrap();
 
         // draw lives
+        let lives_str = "❤ ".repeat(self.lives as usize);
         self.stdout
-            .execute(MoveTo(self.width - (self.lives as u16) - 1, 1)).unwrap()
-            .execute(Print("❤ ".repeat(self.lives as usize))).unwrap();
+            .execute(MoveTo(self.width - 1 - 3, 1)).unwrap()
+            .execute(Print(format!("{:>6}", lives_str))).unwrap();
     }
 
     fn draw_projectile(&mut self) {
@@ -236,7 +224,7 @@ impl Game {
         let y = self.projectile.position.y as u16;
         self.stdout
             .execute(MoveTo(x, y)).unwrap()
-            .execute(Print("⬤")).unwrap();
+            .execute(Print("●")).unwrap();
     }
 
 }

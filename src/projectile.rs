@@ -1,4 +1,4 @@
-use crate::{boundary::{self, Boundary}, paddle::Paddle};
+use crate::{boundary::Boundary, paddle::Paddle};
 
 pub struct Point {
     pub x: u32,
@@ -37,20 +37,49 @@ impl Projectile {
         }
     }
 
-    pub fn predict_future_position(&mut self) -> (u32, u32) {
-        self.check_collisions();
+    pub fn fly_projectile(&mut self, paddle: &Paddle) -> bool {
+        let projectile_lost = self.check_paddle_collision(paddle);
+        self.assign_new_position();
+        projectile_lost
+    }
+
+    fn predict_future_position(&mut self) -> (u32, u32) {
+        self.check_wall_collision();
         let new_x = self.position.x.wrapping_add_signed(self.velocity.x);
         let new_y = self.position.y.wrapping_add_signed(self.velocity.y);
 
         (new_x, new_y)
     }
 
-    pub fn fly_projectile(&mut self) {
+    fn assign_new_position(&mut self) {
         self.position.x = self.position.x.wrapping_add_signed(self.velocity.x);
         self.position.y = self.position.y.wrapping_add_signed(self.velocity.y);
     }
 
-    fn check_collisions(&mut self) {
+    fn check_paddle_collision(&mut self, paddle: &Paddle) -> bool {
+        let (proj_x, proj_y) = self.predict_future_position();
+        let mut projectile_lost = false;
+
+        if proj_y == self.boundary.bottom() - 1 {
+            let mut collided_with_paddle = false;
+            for paddle_x in &paddle.body {
+                if proj_x == *paddle_x { 
+                    collided_with_paddle = true;
+                    break;
+                }
+            }
+
+            if collided_with_paddle {
+                self.velocity.y *= -1;
+            } else {
+                projectile_lost = true;
+            }
+        }
+
+        projectile_lost
+    }
+
+    fn check_wall_collision(&mut self) {
         let new_x = (self.position.x as i32) + self.velocity.x;
         let new_y = (self.position.y as i32) + self.velocity.y;
 
