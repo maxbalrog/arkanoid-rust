@@ -1,17 +1,24 @@
 use std::{io::Stdout, time::Instant};
 use std::thread;
 use std::time::Duration;
-use std::cmp::max;
 
-use crossterm::{cursor::{Hide, MoveTo, Show}, event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers}, style::{Color, Print, ResetColor, SetForegroundColor}, terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}};
-use crossterm::ExecutableCommand;
+use crossterm::{
+    ExecutableCommand,
+    cursor::{Hide, MoveTo, Show},
+    event::{poll, read, Event, KeyCode, KeyEvent, KeyModifiers},
+    style::{Color, Print, ResetColor, SetForegroundColor},
+    terminal::{disable_raw_mode, enable_raw_mode, size, Clear, ClearType, SetSize}
+};
+use rand::{self, Rng};
 
 use crate::{command::Command, direction::Direction, paddle::Paddle};
 use crate::boundary::Boundary;
-use crate::projectile::Projectile;
+use crate::obstacle::{self, Obstacle};
+use crate::projectile::{Point, Projectile};
 
 const PADDLE_LENGTH: usize = 5;
 const HAT_SIZE: u16 = 2;
+const LAST_LVL: u8 = 2;
 
 pub struct Game {
     stdout: Stdout,
@@ -21,8 +28,10 @@ pub struct Game {
     boundary: Boundary,
     paddle: Paddle,
     projectile: Projectile,
+    obstacle: Obstacle,
     score: u32,
     lives: u8,
+    lvl: u8,
 }
 
 impl Game {
@@ -30,7 +39,11 @@ impl Game {
         let original_terminal_size: (u16, u16) = size().unwrap();
         let boundary = Boundary::new(0, width, HAT_SIZE, HAT_SIZE + height + 1);
         let paddle = Paddle::new(PADDLE_LENGTH, boundary.clone());
-        let projectile = Projectile::new(5, 5, 1, 1, boundary.clone());
+
+        // spawn projectile
+        let projectile = Game::spawn_projectile(width, height, boundary.clone());
+
+        let obstacle = Obstacle::new(width, height, 1);
 
         Self { 
             stdout,
@@ -40,8 +53,10 @@ impl Game {
             boundary,
             paddle,
             projectile,
+            obstacle,
             score: 0,
             lives: 3,
+            lvl: 1,
         }
     }
 
@@ -49,38 +64,35 @@ impl Game {
         self.prepare_ui();
         self.render();
         
-        while self.lives > 0 {
-            self.projectile = Projectile::new(5, 5, 1, 1, self.boundary.clone());
-            let mut done: bool = false;
-            while !done {
-                let interval = Duration::from_secs(1);
-                let now = Instant::now();
+        let mut done: bool = false;
+        let mut remaining_blocks = self.obstacle.body.len() > 0;
+        while !done && remaining_blocks {
+            let interval = Duration::from_millis(250);
+            let now = Instant::now();
 
-                while now.elapsed() < interval {
-                    if let Some(command) = self.get_command(interval - now.elapsed()) {
-                        match command {
-                            Command::Quit => {
-                                done = true;
-                                break;
-                            }
-                            Command::Move(direction) => {
-                                self.paddle.shift(direction);
-                            }
-                        }
-                    }
-                }
-                self.render();
+            done = self.wait_for_command(now, interval);
+            self.render();
 
-                let projectile_lost = self.fly_projectile();
+            let (projectile_lost, block_destroyed) = self.projectile.fly_projectile(&self.paddle, &mut self.obstacle);
+            if block_destroyed {self.score += 10};
 
-                let sleep_time = interval.abs_diff(now.elapsed());
-                thread::sleep(sleep_time);
-                self.render();
+            let sleep_time = interval.abs_diff(now.elapsed());
+            thread::sleep(sleep_time);
+            self.render();
 
-                if projectile_lost {
-                    self.lives -= 1;
+            if projectile_lost {
+                self.lives -= 1;
+                if self.lives > 0 {
+                    self.projectile = Game::spawn_projectile(self.width, self.height, self.boundary.clone());
+                } else {
                     done = true;
                 }
+            }
+            remaining_blocks = self.obstacle.body.len() > 0;
+
+            if !remaining_blocks {
+                done = self.transition_to_next_lvl();
+                remaining_blocks = self.obstacle.body.len() > 0;
             }
         }
 
@@ -88,32 +100,56 @@ impl Game {
         println!("Game over! Your score is {}", self.score);
     }
 
-    fn fly_projectile(&mut self) -> bool {
-        let projectile_lost = self.check_paddle_collision();
-        self.projectile.fly_projectile();
-        projectile_lost
-    }
+    fn wait_for_command(&mut self, now: Instant, interval: Duration) -> bool {
+        let mut done = false;
 
-    fn check_paddle_collision(&mut self) -> bool {
-        let (proj_x, proj_y) = self.projectile.predict_future_position();
-        let mut projectile_lost = false;
-
-        if proj_y == self.boundary.bottom() - 1 {
-            let mut collided_with_paddle = false;
-            for paddle_x in &self.paddle.body {
-                if proj_x == *paddle_x { 
-                    collided_with_paddle = true;
-                    break;
+        while now.elapsed() < interval {
+            if let Some(command) = self.get_command(interval - now.elapsed()) {
+                match command {
+                    Command::Quit => {
+                        done = true;
+                        break;
+                    }
+                    Command::Move(direction) => {
+                        self.paddle.shift(direction);
+                    }
                 }
-            }
-            if collided_with_paddle {
-                self.projectile.velocity.y *= -1;
-            } else {
-                projectile_lost = true;
             }
         }
 
-        projectile_lost
+        done
+    }
+
+    fn transition_to_next_lvl(&mut self) -> bool {
+        let mut last_lvl = false;
+
+        if self.lvl < LAST_LVL {
+            self.obstacle = Obstacle::new(self.width, self.height, self.lvl+1);
+        } else {
+            last_lvl = true;
+            self.draw_victory_screen();
+        }
+
+        last_lvl
+    }
+
+    fn draw_victory_screen(&mut self) {
+        self.draw_background();
+        self.draw_victory_text();
+
+        let sleep_time = Duration::from_secs(30);
+        thread::sleep(sleep_time);
+    }
+
+    fn spawn_projectile(width: u16, height: u16, boundary: Boundary) -> Projectile {
+        let mut rng = rand::rng();
+        let proj_x = rng.random_range(1..width-1) as u32;
+        let proj_y = (height/2) as u32;
+
+        let move_right = rng.random_bool(0.5);
+        let vx = if move_right {1} else {-1};
+
+        Projectile::new(proj_x, proj_y, vx, 1, boundary)
     }
 
     fn get_command(&self, wait_for: Duration) -> Option<Command> {
@@ -168,6 +204,7 @@ impl Game {
         self.draw_paddle();
         self.draw_text_ui();
         self.draw_projectile();
+        self.draw_obstacle();
     }
 
     fn draw_background(&mut self) {
@@ -179,6 +216,13 @@ impl Game {
                     .execute(MoveTo(x, y)).unwrap()
                     .execute(Print(" ")).unwrap();
             }
+        }
+
+        // Also clear lives bar
+        for x in self.width/2..self.width+1 {
+            self.stdout
+                .execute(MoveTo(x, 1)).unwrap()
+                .execute(Print(" ")).unwrap();
         }
     }
 
@@ -223,9 +267,10 @@ impl Game {
             .execute(Print(format!("SCORE: {:04}", self.score))).unwrap();
 
         // draw lives
+        let lives_str = "❤ ".repeat(self.lives as usize);
         self.stdout
-            .execute(MoveTo(self.width - (self.lives as u16) - 1, 1)).unwrap()
-            .execute(Print("❤ ".repeat(self.lives as usize))).unwrap();
+            .execute(MoveTo(self.width - 1 - 3, 1)).unwrap()
+            .execute(Print(format!("{:>6}", lives_str))).unwrap();
     }
 
     fn draw_projectile(&mut self) {
@@ -236,7 +281,27 @@ impl Game {
         let y = self.projectile.position.y as u16;
         self.stdout
             .execute(MoveTo(x, y)).unwrap()
-            .execute(Print("⬤")).unwrap();
+            .execute(Print("●")).unwrap();
+    }
+
+    fn draw_obstacle(&mut self) {
+        let fg = SetForegroundColor(Color::Green);
+        self.stdout.execute(fg).unwrap();
+
+        for Point{ x, y } in &self.obstacle.body {
+            self.stdout
+                .execute(MoveTo(*x as u16, *y as u16)).unwrap()
+                .execute(Print("■")).unwrap();
+        }
+    }
+
+    fn draw_victory_text(&mut self) {
+        let fg = SetForegroundColor(Color::White);
+        self.stdout.execute(fg).unwrap();
+
+        self.stdout
+            .execute(MoveTo(self.width/2, self.height/2)).unwrap()
+            .execute(Print("YOU WON!")).unwrap();
     }
 
 }
