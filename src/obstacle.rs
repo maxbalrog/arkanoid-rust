@@ -21,7 +21,7 @@ impl Obstacle {
 
     fn generate_lvl_1(width: u16, height: u16) -> Vec<Point> {
         let mut body = vec![];
-        for i in (1..width).step_by(2) {
+        for i in (5..width-3).step_by(2) {
             body.push(Point::new(i.into(), 4));
         };
 
@@ -29,6 +29,16 @@ impl Obstacle {
     }
 
     fn generate_lvl_2(width: u16, height: u16) -> Vec<Point> {
-        vec![]
+        let mut body = vec![];
+        let mid = width / 2;
+
+        // create three rows of blocks
+        for (row,offset) in [6,4,2].iter().enumerate() {
+            for i in (mid-offset..=mid+offset).step_by(2) {
+                body.push(Point::new(i.into(), (5 + 2*row) as u32));
+            }
+        }
+
+        body
     }
 }

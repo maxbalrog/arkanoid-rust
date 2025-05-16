@@ -18,6 +18,7 @@ use crate::projectile::{Point, Projectile};
 
 const PADDLE_LENGTH: usize = 5;
 const HAT_SIZE: u16 = 2;
+const LAST_LVL: u8 = 2;
 
 pub struct Game {
     stdout: Stdout,
@@ -30,6 +31,7 @@ pub struct Game {
     obstacle: Obstacle,
     score: u32,
     lives: u8,
+    lvl: u8,
 }
 
 impl Game {
@@ -54,6 +56,7 @@ impl Game {
             obstacle,
             score: 0,
             lives: 3,
+            lvl: 1,
         }
     }
 
@@ -62,23 +65,12 @@ impl Game {
         self.render();
         
         let mut done: bool = false;
-        while !done {
-            let interval = Duration::from_millis(350);
+        let mut remaining_blocks = self.obstacle.body.len() > 0;
+        while !done && remaining_blocks {
+            let interval = Duration::from_millis(250);
             let now = Instant::now();
 
-            while now.elapsed() < interval {
-                if let Some(command) = self.get_command(interval - now.elapsed()) {
-                    match command {
-                        Command::Quit => {
-                            done = true;
-                            break;
-                        }
-                        Command::Move(direction) => {
-                            self.paddle.shift(direction);
-                        }
-                    }
-                }
-            }
+            done = self.wait_for_command(now, interval);
             self.render();
 
             let (projectile_lost, block_destroyed) = self.projectile.fly_projectile(&self.paddle, &mut self.obstacle);
@@ -96,10 +88,57 @@ impl Game {
                     done = true;
                 }
             }
+            remaining_blocks = self.obstacle.body.len() > 0;
+
+            if !remaining_blocks {
+                done = self.transition_to_next_lvl();
+                remaining_blocks = self.obstacle.body.len() > 0;
+            }
         }
 
         self.restore_ui();
         println!("Game over! Your score is {}", self.score);
+    }
+
+    fn wait_for_command(&mut self, now: Instant, interval: Duration) -> bool {
+        let mut done = false;
+
+        while now.elapsed() < interval {
+            if let Some(command) = self.get_command(interval - now.elapsed()) {
+                match command {
+                    Command::Quit => {
+                        done = true;
+                        break;
+                    }
+                    Command::Move(direction) => {
+                        self.paddle.shift(direction);
+                    }
+                }
+            }
+        }
+
+        done
+    }
+
+    fn transition_to_next_lvl(&mut self) -> bool {
+        let mut last_lvl = false;
+
+        if self.lvl < LAST_LVL {
+            self.obstacle = Obstacle::new(self.width, self.height, self.lvl+1);
+        } else {
+            last_lvl = true;
+            self.draw_victory_screen();
+        }
+
+        last_lvl
+    }
+
+    fn draw_victory_screen(&mut self) {
+        self.draw_background();
+        self.draw_victory_text();
+
+        let sleep_time = Duration::from_secs(30);
+        thread::sleep(sleep_time);
     }
 
     fn spawn_projectile(width: u16, height: u16, boundary: Boundary) -> Projectile {
@@ -254,6 +293,15 @@ impl Game {
                 .execute(MoveTo(*x as u16, *y as u16)).unwrap()
                 .execute(Print("■")).unwrap();
         }
+    }
+
+    fn draw_victory_text(&mut self) {
+        let fg = SetForegroundColor(Color::White);
+        self.stdout.execute(fg).unwrap();
+
+        self.stdout
+            .execute(MoveTo(self.width/2, self.height/2)).unwrap()
+            .execute(Print("YOU WON!")).unwrap();
     }
 
 }
